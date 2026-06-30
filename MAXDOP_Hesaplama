@@ -1,4 +1,3 @@
-DECLARE @recommended_maxdop_max_value INT
 SELECT  
             N'CPU',  
             CONVERT(nvarchar(10), osi.cpu_count) +  
