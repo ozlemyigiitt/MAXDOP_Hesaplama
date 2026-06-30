@@ -1,0 +1,50 @@
+DECLARE @recommended_maxdop_max_value INT
+SELECT  
+            N'CPU',  
+            CONVERT(nvarchar(10), osi.cpu_count) +  
+            N' logical processors, ' +  
+            CONVERT(nvarchar(10), osi.hyperthread_ratio) +  
+            N' physical cores, ' +  
+            CONVERT(nvarchar(10), ISNULL(osi.numa_node_count, 1)) +  
+            N' NUMA node(s)' ,
+			c.value_in_use as Current_MAXDOP_Value,
+
+			--Single NUMA node ve 8 veya daha az logical processors
+			CASE WHEN ISNULL(osi.numa_node_count, 1)=1  and  osi.cpu_count <=8 THEN 
+				CASE WHEN c.value_in_use=0 THEN osi.cpu_count
+					 WHEN c.value_in_use= osi.cpu_count THEN c.value_in_use
+					 ELSE osi.cpu_count
+				END
+			
+			--Single NUMA node ve 8'den fazla logical processors
+			WHEN ISNULL(osi.numa_node_count, 1)=1  and  osi.cpu_count>8 THEN 
+				CASE WHEN c.value_in_use=0 THEN 8
+					 WHEN c.value_in_use=8 THEN c.value_in_use
+					 ELSE 8
+				END
+			--Multiple NUMA node ve her NUMA başına 16 veya daha az logical processors
+			WHEN ISNULL(osi.numa_node_count, 1) > 1 AND (osi.cpu_count / osi.numa_node_count) <= 16 THEN 
+				CASE WHEN c.value_in_use = 0 THEN (osi.cpu_count / osi.numa_node_count)
+					WHEN c.value_in_use <= (osi.cpu_count / osi.numa_node_count) THEN c.value_in_use                 
+					ELSE (osi.cpu_count / osi.numa_node_count)
+				END
+
+			--Multiple NUMA node ve her NUMA başına 16'dan fazla logical processors
+			WHEN ISNULL(osi.numa_node_count, 1) > 1 AND (osi.cpu_count / osi.numa_node_count) > 16 THEN
+				CASE WHEN c.value_in_use = 0 THEN 
+					CASE WHEN ((osi.cpu_count / osi.numa_node_count) / 2) > 16 THEN 16 
+						ELSE ((osi.cpu_count / osi.numa_node_count) / 2)                     
+					END
+					
+					WHEN c.value_in_use <= CASE WHEN ((osi.cpu_count / osi.numa_node_count) / 2) > 16 THEN 16
+												ELSE ((osi.cpu_count / osi.numa_node_count) / 2) 
+												END THEN c.value_in_use                   
+					ELSE CASE WHEN ((osi.cpu_count / osi.numa_node_count) / 2) > 16 THEN 16 
+							  ELSE ((osi.cpu_count / osi.numa_node_count) / 2)                   
+						 END
+			END
+		END AS recommended_maxdop_max_value
+        FROM sys.dm_os_sys_info AS osi
+		cross join sys.configurations as c
+		where c.name in ('max degree of parallelism') ;
+
